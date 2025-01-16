@@ -1,0 +1,3 @@
+Name = ['abc', 'def', 'ghi']
+Mark 1 = [7, 8, 9]
+Mark 2 = [6, 3, 8]
