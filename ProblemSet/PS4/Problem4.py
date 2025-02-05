@@ -7,21 +7,7 @@ cannot be constructed.
 '''
 import numpy as np
 import numpy.linalg as la
-def ortho_basis(X):
-
-    return la.qr(X)[0][:, :la.matrix_rank(X)], la.matrix_rank(X)
-
 A = eval(input("Enter list of vectors in A"))
 B = eval(input("Enter list of vectors in B"))
-
-U, ur = ortho_basis(A)
-V, vr = ortho_basis(B)
-
-if ur != vr:
-    print("Not Possible")
-else:
-    print(U@V.T)
-
-
-
+print((la.qr(A)[0][:, :la.matrix_rank(A)]) @ (la.qr(B)[0][:, :la.matrix_rank(B)].T) if la.matrix_rank(A) == la.matrix_rank(B) else "Not Possible")
 

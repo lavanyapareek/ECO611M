@@ -8,9 +8,9 @@ the best fit solution along with the squared error if there are no solutions.
 '''
 import numpy as np
 import numpy.linalg as la
+A = np.random.rand(5, 11)
+b = np.random.rand(5)
 
-A=np.array([[1,2,3],[4,5,6],[7,8,9]])
-b=np.array([1,2,3])
 
 
 def linear_system(A, b):
@@ -37,7 +37,7 @@ def linear_system(A, b):
             print("Least-squared solution : \n", x)
             print("Squared Error : ", np.sum(residuals) if residuals.size > 0 else 0.0)
             U, S, Vt = la.svd(A)
-            print("Basis for null space of A : \n", Vt.T[:, rank:])
+            print("Basis for null space of A : \n", Vt.T[:, np.sum(s > 1e-8):])
     else:
         #No Solutions
         print("System Has no Solutions")
@@ -76,5 +76,6 @@ def linear_lstsq(A, b):
         return "Solutions Exist"
     else:
         return "No Solutions"
+
 print(linear_system(A, b))
 print(linear_lstsq(A, b))
