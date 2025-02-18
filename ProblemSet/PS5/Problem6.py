@@ -28,19 +28,32 @@ def Finv(u, n):
     return x
 
 # Parameters
-n = 11
+n = 3
+def Finvb(u, n):
+    a = - 1
+    b = 1
+    g = F(0, n) - u
+    while np.abs(g) >= 1e-8:
+        if(g < 0):
+            a = (a + b)/2
+        else:
+            b = (a + b)/2
+        g = F((a + b)/2, n) - u
+    return (a + b)/2
 
 # Generate random samples
 U = np.random.random(10000)  # Uniformly distributed values in [0,1]
 X = np.array([Finv(u, n) for u in U])  # Transform using inverse CDF
+Xb = np.array([Finvb(u, n) for u in U]) 
 
 # Generate the theoretical PDF
-x_vals = np.linspace(-1, 1, 10000)
+x_vals = np.arange(-1, 1, 0.0001)
 pdf_vals = f(x_vals, n)  # Theoretical probability density function
 
 # Plot the results
 plt.figure(figsize=(8, 5))
-plt.hist(X, bins=np.arange(-1.1, 1.1, 0.01), density=True, alpha=0.6, label="Sampled Distribution")
+plt.hist(X, bins=np.arange(-1.1, 1.1, 0.1), density=True, alpha = 0.3, label="Sampled Distribution Newton")
+plt.hist(Xb, bins=np.arange(-1.1, 1.1, 0.1), density=True, alpha=0.6, label="Sampled Distribution Bisection")
 plt.plot(x_vals, pdf_vals, 'r-', lw=2, label="Theoretical PDF")
 plt.xlabel("x")
 plt.ylabel("Density")

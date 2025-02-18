@@ -12,7 +12,7 @@ def ortho(A):
     if n >= m:
         return ValueError("m should not be greater than n")
 
-    return np.hstack((A, la.qr(A, mode="complete")[0][:, n :]))
+    return np.hstack((A, la.qr(A, mode = "complete")[0][:, n :]))
 
 def orthosvd(A):
     m, n = A.shape
@@ -25,5 +25,5 @@ A = np.random.rand(3, 2)
 A, _ = la.qr(A)
 
 print(A)
-print(ortho(A))
+print(ortho(A).T @ ortho(A))
 print(orthosvd(A).T@orthosvd(A))
