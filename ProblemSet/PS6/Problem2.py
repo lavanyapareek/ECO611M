@@ -33,7 +33,6 @@ def solve(f, x, c):
     while f(x)[0]**2 + f(x)[1]**2 + f(x)[2]**2 >= 1e-6:
         x = x - la.pinv(Jacob(c, x))@np.array([f(x)[0], f(x)[1], f(x)[2]])
         k += 1
-        print(f(x)[0]**2 + f(x)[1]**2 + f(x)[2]**2, x, k)
         if k > 99:
             break
     return x

@@ -11,7 +11,7 @@ def G(x):
     return np.array([200*(x[1] - x[0]**2)*(-2*x[0]) - 2*(1 - x[0]), 200*(x[1] - x[0]**2)])
 def F(x):
     return 100*(x[1] - x[0]**2)**2 + (1 - x[0])**2
-x = np.array([1/2, 1/2])
+x = np.array([100, 100])
 k = 0
 while la.norm(G(x)) >= 1e-6:
     print(la.norm(G(x)))
