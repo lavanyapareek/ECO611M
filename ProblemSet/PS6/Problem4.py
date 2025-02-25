@@ -28,4 +28,4 @@ def solve(x):
         k = k + 1
     return x, k
 
-print(solve(np.array([0, 1])))
+print(solve(np.array([0.7, 1])))

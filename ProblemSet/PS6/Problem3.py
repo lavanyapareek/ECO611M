@@ -23,7 +23,7 @@ def solve(H, x):
         x = x + alpha*d
         k = k + 1
     return x, k
-x = np.array([100, 100])
+x = np.array([100, 1])
 for a in A:
     print(solve(H(a), x), a)
 

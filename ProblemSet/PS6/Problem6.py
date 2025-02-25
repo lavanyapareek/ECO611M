@@ -10,31 +10,22 @@ Check if the solution converges to the solution (-A^-1b) for all the generated (
 import numpy as np
 import numpy.linalg as la
 
-def generateRandomMatrix(n):
-    return np.random.randint(-9, 10, (n, n))
-
-def A(n):
-    x = generateRandomMatrix(n)
-    return x@x.T + np.eye(n)
-def b(n):
-    return np.random.randint(-9, 10, (n, 1))
-n = 5
-A = A(n)
-b = b(n)
-V, L = la.eig(A)
-
-x = np.ones((n, 1))
+n = 1000
+X = np.random.randint(-10,10,(n,n))
+A = X@X.T + np.eye(n)
+b = np.random.randint(-100, 100, (n,1))
+L, V = la.eig(A)
+x = np.zeros(n)
 g = A@x + b
-d = -g
-tol = 1e-10
-k = 0
+i = 0
+while la.norm(g) >= 1e-6:
+    if i >= n:
+        break
+    d = V[:, i]
+    alpha = -(d.T @ g)/(d.T @ A @ d)
+    x = x + alpha*d
+    g = A@x + b.flatten()
+    i += 1
+    print(la.norm(A@x + b))
 
-while la.norm(A@x + b) >= tol:
-    alpha = -(d.T @ g) / (d.T @ A @ d)
-    x = x + alpha * d
-    g_new = A @ x + b
-    d = -g_new + ((g_new.T @ g_new)/(g.T @ g))*d
-    g = g_new
-    k += 1
-    print(la.norm(A@x + b), x.T, k)
-print(np.isclose(-la.inv(A)@b, x, rtol = tol))
+print(np.allclose(x.reshape(-1, 1), -la.inv(A)@b))

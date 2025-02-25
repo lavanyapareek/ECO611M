@@ -17,11 +17,12 @@ def Jacob(x):
 def newton(f1, f2, x):
     k = 0
     while f1(x)**2 + f2(x)**2 >= 1e-12:
+        print(Jacob(x))
         x = x - la.pinv(Jacob(x))@np.array([f1(x), f2(x)])
         k = k + 1
-        print(x, f1(x)**2 + f2(x)**2, la.cond(Jacob(x)), k)
+        #print(x, f1(x)**2 + f2(x)**2, la.cond(Jacob(x)), k)
     return x
 y = np.array([3, 3])
 x = np.array([0.5, 0.5])
 print(newton(f1, f2, y))
-print(newton(f1, f2, x))
+#print(newton(f1, f2, x))
