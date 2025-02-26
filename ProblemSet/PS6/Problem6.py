@@ -10,22 +10,19 @@ Check if the solution converges to the solution (-A^-1b) for all the generated (
 import numpy as np
 import numpy.linalg as la
 
-n = 1000
+n = 10
 X = np.random.randint(-10,10,(n,n))
 A = X@X.T + np.eye(n)
-b = np.random.randint(-100, 100, (n,1))
+b = np.random.randint(-10, 10, (n,1))
 L, V = la.eig(A)
 x = np.zeros(n)
 g = A@x + b
 i = 0
 while la.norm(g) >= 1e-6:
-    if i >= n:
-        break
     d = V[:, i]
-    alpha = -(d.T @ g)/(d.T @ A @ d)
+    alpha = -(np.dot(d, g))/(d.T @ A @ d)
     x = x + alpha*d
     g = A@x + b.flatten()
     i += 1
-    print(la.norm(A@x + b))
-
+    print(x.reshape(-1, 1) + la.inv(A)@b)
 print(np.allclose(x.reshape(-1, 1), -la.inv(A)@b))

@@ -137,11 +137,11 @@ or play around with values of c1, rho, alpha etc.
 '''
 
 #Problem 6, The head hurting, transpose shooting, Line searching shittiest of the shit shit taking a shit problem.
-n = 1000
+n = 10
 X = np.random.randint(-10,10,(n,n))
 A = X@X.T + np.eye(n)
-b = np.random.randint(-100, 100, (n,1))
-L, V = la.eig(A)
+b = np.random.randint(-10, 10, (n,1))
+L, V = la.eigh(A)
 x = np.zeros(n)
 g = A@x + b
 i = 0
