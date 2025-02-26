@@ -142,18 +142,25 @@ X = np.random.randint(-10,10,(n,n))
 A = X@X.T + np.eye(n)
 b = np.random.randint(-10, 10, (n,1))
 L, V = la.eigh(A)
-x = np.zeros(n)
+x = np.random.random((n, 1))
 g = A@x + b
 i = 0
 while la.norm(g) >= 1e-6:
     if i >= n:
         break
-    d = V[:, i]
+    d = V[:, i].reshape(-1, 1)
     alpha = -(d.T @ g)/(d.T @ A @ d)
     x = x + alpha*d
-    g = A@x + b.flatten()
+    g = A@x + b
     i += 1
     print(la.norm(A@x + b))
 
-print(np.allclose(x.reshape(-1, 1), -la.inv(A)@b))
+
+
+
+
+
+
+
+
 

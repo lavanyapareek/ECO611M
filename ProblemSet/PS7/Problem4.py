@@ -1,5 +1,5 @@
 import numpy as np
-def init(c, A, b, M = 1e20):
+def init(c, A, M = 1e20):
     m, n = A.shape
 
     I = np.eye(m)
@@ -19,8 +19,8 @@ def updateA(A, Bset, Nset, c):
     cn = c[Nset]
     return B, N, cb, cn
 
-def simplex(c, A_eq, b_eq, M=1e20):
-    m, n, A, c, Bset, Nset =  init(c, A_eq, b_eq) # Number of constraints (m) and original variables (n)
+def simplex(c, A_eq, b_eq):
+    m, n, A, c, Bset, Nset =  init(c, A_eq) # Number of constraints (m) and original variables (n)
     B, N, cb, cn = updateA(A, Bset, Nset, c)
     iter_count = 1
     while True:
@@ -43,7 +43,7 @@ def simplex(c, A_eq, b_eq, M=1e20):
         aq = B_inv @ N[:, q]
         
         # Ratio test for minimum leaving variable
-        min_ratio, j = np.inf, -1
+        min_ratio, j = float('inf'), -1
         for i in range(m):
             if aq[i] > 0:
                 ratio = xb[i] / aq[i]
@@ -64,7 +64,7 @@ def simplex(c, A_eq, b_eq, M=1e20):
         
         iter_count += 1
     
-    return x # Return only the original variables (excluding artificial variables)
+    return x[:n] # Return only the original variables (excluding artificial variables)
 
 # Example usage
 c = np.array([2,15,5,6])  # Coefficients of the objective function
@@ -79,7 +79,7 @@ print(simplex(c, A_eq, b_eq))
 
 
 '''
-Author's Note : Altough this is a bit different from what we have 
+Author's Note : Although this is a bit different from what we have 
 learnt in class but it works just fine, most of the times even better 
 than the original. The only differnece is that I am taking the 
 augmented c vector as [c | M, M, ....mtimes] to initialise a large 
