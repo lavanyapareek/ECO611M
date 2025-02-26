@@ -75,3 +75,13 @@ from scipy.optimize import linprog
 result = linprog(c, A_eq=A_eq, b_eq=b_eq, method='highs')
 print(result.x)
 print(simplex(c, A_eq, b_eq))
+
+
+
+'''
+Author's Note : Altough this is a bit different from what we have 
+learnt in class but it works just fine, most of the times even better 
+than the original. The only differnece is that I am taking the 
+augmented c vector as [c | M, M, ....mtimes] to initialise a large 
+error value for cn_bar, this supposedly gives solution everytime.
+'''
