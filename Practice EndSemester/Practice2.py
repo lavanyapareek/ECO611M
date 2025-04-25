@@ -119,7 +119,7 @@ def simplex(c, A, b):
         xb = B_inv @ b
         x = np.zeros(n + m)
         x[Bset] = xb
-        cn_bar = cn - cb @ ( B_inv @ N)
+        cn_bar = cn - cb @ ( B_inv @ N )
         if (cn_bar >= 0).all():
             break
         q = np.argmin(cn_bar)
@@ -141,8 +141,50 @@ c = np.array([-3, -2, -4, 0, 0])  # Coefficients of the objective function
 A = np.array([[1, 1, 1, 1, 0], [2, 1, 0, 0, 1]])  # Constraint matrix
 b = np.array([100, 80])  # Right-hand side values
 from scipy.optimize import linprog
-result = linprog(c, A_ub=A, b_ub=b, method='highs')
-print(result.x)
-print("Thou Maximiser ist : ", simplex(c, A, b), "Thou Maximum Value est grains ist : ", -c.T @ simplex(c, A, b))
+result = linprog(c, A_eq=A, b_eq=b, method='highs')
+#print(result.x)
+#print("Thy Most Noble Maximiser be: ", simplex(c, A, b),  
+      #"Verily, Thy Maximum Value in grains be: ", -c.T @ simplex(c, A, b))  
+
+import numpy as np 
+import numpy.linalg as la
+
+def simplexPP(c, A, b):
+    m, n = A.shape
+    A, c, Bset, Nset = np.hstack((A, np.eye(m))), np.concat((c, np.full(m, 1e20))), list(range(n, m + n)), list(range(n))
+    B, N, cb, cn = A[:, Bset], A[:, Nset], c[Bset], c[Nset]
+    iter = 1
+    while True:
+        B_Inv = la.inv(B)
+        xb = B_Inv @ b
+        x = np.zeros(m + n)
+        x[Bset] = xb
+        cn_bar = cn - cb @ ( B_Inv @ N )
+        if ( cn_bar >= 0 ).all():
+            break
+        q = np.argmin(cn_bar)
+        aq = B_Inv @ N[:, q]
+        minratio, j = float('inf'), -1
+        for i in range(m):
+            if aq[i] > 0:
+                ratio = xb[i] / aq[i]
+                if ratio < minratio:
+                    minratio = ratio
+                    j = i
+        if j == -1:
+            return "UB"
+        Bset[j], Nset[q] = Nset[q], Bset[j]
+        B, N, cb, cn = A[:, Bset], A[:, Nset], c[Bset], c[Nset]
+        iter += 1
+    return x[:n - 2]
+
+
+c = np.array([-3, -2, -4, 0, 0])  # Coefficients of the objective function
+A = np.array([[1, 1, 1, 1, 0], [2, 1, 0, 0, 1]])  # Constraint matrix
+b = np.array([100, 80])  # Right-hand side values
+from scipy.optimize import linprog
+result = linprog(c, A_eq=A, b_eq=b, method='highs')
+print(result.x[:A.shape[1] - 2])
+print("Thy Most Noble Maximiser be: ", simplexPP(c, A, b))
 
 

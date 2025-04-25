@@ -1,0 +1,699 @@
+import tensorflow as tf
+import pandas as pd
+import yfinance as yf
+import numpy as np
+import math
+from itertools import product, combinations
+from sklearn.preprocessing import MinMaxScaler
+from copy import copy
+from collections import deque
+from tqdm.auto import tqdm
+import os
+import pickle as pkl
+from copy import deepcopy
+class PortfolioEnv():
+    
+    def __init__(self, dates, datasets, n):
+        self.dates = dates
+        self.datasets = datasets
+        self.n = n
+        self.process_big_pt()
+        self.mm_scaler = MinMaxScaler()
+        self.process_small_pt()
+
+        self.initial_pt = 1000000 # 1 000 000
+        self.c_minus = 0.0025 # 0.25%
+        self.c_plus = 0.0025 # 0.25%
+        self.delta = 10000 # 10 000
+
+        self.process_actions()
+        self.action_shape = self.actions.shape[0]
+        self._episode_ended = False
+
+    def reset(self):
+        # initialisation of portfolio
+        self.pt = self.initial_pt # 1 000 000
+        self.wt = [0,1/3,1/3,1/3] # wt before state 0
+
+        self.current_tick = 0 # after checking, current_tick should be set to 0
+        self.episode_ended = False
+
+        ktc = self.big_pt[self.current_tick,0,:,self.n-1]
+        wt_prime = (self.wt*self.phi(ktc)) / (np.dot(self.wt,self.phi(ktc)))
+
+        # after checking, we should return state 0
+        return {'big_xt':np.array(self.small_pt[self.current_tick]), 'wt_prime':wt_prime}
+
+    def process_actions(self):
+        asset_number = 3  # Number of tradable assets
+        action_options = [0, 1, 2]  # Sell (0), Hold (1), Buy (2)
+
+        # Generate all possible actions across assets
+        self.actions = np.array(list(product(action_options, repeat=asset_number)))
+
+    def find_action_index(self,action):
+        for ind, a in enumerate(self.actions):
+            if np.array_equal(a, action):
+                return ind
+
+    def process_big_pt(self):
+        datasets = self.datasets
+        date_start = self.dates[0]
+        date_end = self.dates[1]
+
+        dfs = []
+        for d in datasets:
+            ticker = yf.Ticker(d)
+            # get historical market data
+            df_ = ticker.history(start=date_start, end=date_end, interval="1d")
+            df_.rename(mapper={
+                "Close": d+"_close",
+                "Open": d+"_open",
+                "High": d+"_high",
+                "Low": d+"_low",
+                "Volume": d+"_volume"
+            }, inplace=True, axis=1)
+            if "Dividends" in df_.columns:
+                df_.drop(axis=1,labels=["Dividends", "Stock Splits"],inplace=True)
+            dfs.append(df_)
+
+        final_df = pd.concat(dfs, axis=1)
+        final_df.dropna(inplace=True)
+
+        self.final_df = final_df
+
+        final_df = self.final_df
+        n = self.n
+        Pc = []
+        for d in datasets:
+            asset_close = final_df[d+"_close"].values
+            asset_prev_close = final_df[d+"_close"].shift().values
+            Kc = (asset_close - asset_prev_close) / asset_prev_close
+            Kc = Kc[1:]
+            Pc_ = [Kc[i:i+n] for i in range(len(asset_close)-n)] # Kc[0:20], Kc[1:21], Kc[2:22]
+            Pc.append(Pc_)
+        Pc = np.array(Pc)
+        Po = []
+        for d in datasets:
+            asset_prev_close = final_df[d+"_close"].shift().values
+            asset_open = final_df[d+"_open"].values
+            Ko = (asset_open - asset_prev_close) / asset_prev_close
+            Ko = Ko[1:]
+            Po_ = [Ko[i:i+n] for i in range(len(asset_open)-n)]
+            Po.append(Po_)
+        Po = np.array(Po)
+        Pl = []
+        for d in datasets:
+            asset_close = final_df[d+"_close"].values
+            asset_low = final_df[d+"_low"].values
+            Kl = (asset_close - asset_low) / asset_low
+            Kl = Kl[1:]
+            Pl_ = [Kl[i:i+n] for i in range(len(asset_low)-n)]
+            Pl.append(Pl_)
+        Pl = np.array(Pl)
+        Ph = []
+        for d in datasets:
+            asset_close = final_df[d+"_close"].values
+            asset_high = final_df[d+"_high"].values
+            Kh = (asset_close - asset_high) / asset_high
+            Kh = Kh[1:]
+            Ph_ = [Kh[i:i+n] for i in range(len(asset_high)-n)]
+            Ph.append(Ph_)
+        Ph = np.array(Ph)
+        Pv = []
+        for d in datasets:
+            asset_prev_volume = final_df[d+"_volume"].shift().values
+            asset_volume = final_df[d+"_volume"].values
+            Kv = (asset_volume - asset_prev_volume) / asset_prev_volume
+            Kv = Kv[1:]
+            Pv_ = [Kv[i:i+n] for i in range(len(asset_high)-n)]
+            Pv.append(Pv_)
+        Pv = np.array(Pv)
+        Pt_star = np.array([Pc, Po, Pl, Ph, Pv])
+
+        self.big_pt = Pt_star.swapaxes(0,2).swapaxes(1,2)
+        print(self.big_pt.shape)
+
+    def process_small_pt(self):
+        small_pt = []
+        mm_scaler = MinMaxScaler()
+        for big_xt in self.big_pt:
+            big_xt = big_xt.swapaxes(0,1).swapaxes(1,2)
+            big_xt_reshaped = big_xt.reshape(-1, big_xt.shape[-1])  # Flatten time series
+            big_xt_scaled = mm_scaler.fit_transform(big_xt_reshaped).reshape(big_xt.shape)
+
+            small_pt.append(big_xt_scaled)
+
+        self.small_pt = np.array(small_pt)
+        print(self.small_pt.shape)
+
+    def phi(self, v):
+      return np.concatenate(([1], v + 1))
+
+    def get_wt_prime_chapeau(self, wt_prime, big_s_minus, big_s_plus, pt_prime):
+        """
+        Adjusts portfolio weights based on action:
+        - Sells assets if there are sufficient holdings.
+        - Buys assets if there is sufficient cash.
+        - Maintains cash balance properly.
+        """
+        wt_prime_chapeau = wt_prime.copy()  # Copy to avoid modifying original
+        available_cash = wt_prime[0] * pt_prime  # Total cash available
+
+        for ind in big_s_minus:  # Selling case
+            if wt_prime[ind] * pt_prime >= self.delta:  # Only sell if enough asset exists
+                wt_prime_chapeau[ind] -= self.delta / pt_prime
+
+        for ind in big_s_plus:  # Buying case
+            cash_needed = self.delta * (1 + self.c_plus)
+            if available_cash >= cash_needed:  # Only buy if enough cash exists
+                wt_prime_chapeau[ind] += self.delta / pt_prime
+                available_cash -= cash_needed  # Deduct spent cash
+
+        # Ensure the portfolio weights remain valid (non-negative)
+        wt_prime_chapeau = np.maximum(wt_prime_chapeau, 0)  # Prevent negative values
+
+        return wt_prime_chapeau
+
+    def is_asset_shortage(self,action,pt,wt):
+        big_s_minus = np.where(action==0)[0]
+        for ind in big_s_minus:
+            if ind + 1 < len(wt) and wt[ind+1] * pt < self.delta:
+                return True
+
+        return False
+
+    def is_cash_shortage(self,action,pt,wt):
+        action = np.atleast_1d(action)
+        big_s_minus = np.where(action == 0)[0]
+        big_s_plus = np.where(action == 2)[0]
+        current_cash = wt[0]*pt
+        cash_after_selling = current_cash + (1-self.c_minus)*self.delta*len(big_s_minus) # must include transaction costs
+        cash_needed = (self.c_plus+1)*self.delta*len(big_s_plus) # must include transaction costs
+
+        if(cash_after_selling < cash_needed):
+            return True
+
+        return False
+
+    def action_mapping(self,action,action_Q_values,pt,wt):
+        action = copy(action)
+        action_mapped = action
+        if self.is_asset_shortage(action,pt,wt):
+            action_mapped = self.rule2(action,action_Q_values,pt,wt)
+        elif self.is_cash_shortage(action,pt,wt):
+            action_mapped = self.rule1(action,action_Q_values,pt,wt)
+
+        return action_mapped
+
+    def rule1(self, action, action_Q_values, pt, wt):
+        """
+        Adjusts the action when there is a cash shortage by changing some '2' (buy) actions to '1' (hold).
+        Ensures the new action is feasible and selects the best alternative based on Q-values.
+        """
+        big_s_plus = np.where(action == 2)[0]  # Indices where the agent wants to buy
+
+        # If there's no cash shortage, return the original action
+        if not self.is_cash_shortage(action, pt, wt):
+            return action
+
+        MAXQ = -np.inf
+        action_selected = deepcopy(action)
+
+        # Generate subsets of buy actions to change to hold (1)
+        for i in range(1, len(big_s_plus) + 1):  
+            for subset in combinations(big_s_plus, i):
+                new_action = deepcopy(action)
+                for j in subset:
+                    new_action[j] = 1  # Convert buy (2) → hold (1)
+
+                # Check if the new action is now feasible
+                if not self.is_cash_shortage(new_action, pt, wt) and not self.is_asset_shortage(new_action, pt, wt):
+                    new_action_index = self.find_action_index(new_action)
+                    new_action_Q_value = action_Q_values[new_action_index]
+
+                    # Select the best alternative action based on Q-value
+                    if new_action_Q_value > MAXQ:
+                        MAXQ = new_action_Q_value
+                        action_selected = new_action
+
+        return action_selected
+
+    def rule2(self, action, action_Q_values, pt, wt):
+        """
+        Adjusts the action when there is an asset shortage by changing some '0' (sell) actions to '1' (hold).
+        Ensures the new action is feasible and selects the best alternative based on Q-values.
+        """
+        big_s_minus = np.where(action == 0)[0]  # Indices where the agent wants to sell
+
+        # If there's no asset shortage, return the original action
+        if not self.is_asset_shortage(action, pt, wt):
+            return action
+
+        MAXQ = -np.inf
+        action_selected = deepcopy(action)
+
+        # Generate subsets of sell actions to change to hold (1)
+        for i in range(1, len(big_s_minus) + 1):  
+            for subset in combinations(big_s_minus, i):
+                new_action = deepcopy(action)
+                for j in subset:
+                    new_action[j] = 1  # Convert sell (0) → hold (1)
+
+                # Ensure the modified action still does not create a cash shortage
+                if not self.is_asset_shortage(new_action, pt, wt) and not self.is_cash_shortage(new_action, pt, wt):
+                    new_action_index = self.find_action_index(new_action)
+                    new_action_Q_value = action_Q_values[new_action_index]
+
+                    # Select the best alternative action based on Q-value
+                    if new_action_Q_value > MAXQ:
+                        MAXQ = new_action_Q_value
+                        action_selected = new_action
+
+        return action_selected
+
+    def F(self,pt,wt):
+        action_possible = []
+        for ind, action in enumerate(self.actions):
+            if not self.is_asset_shortage(action,pt,wt) and not self.is_cash_shortage(action,pt,wt):
+                action_possible.append(ind)
+
+        return np.array(action_possible)
+    
+    def compute_reward(self, excess_return, action, position_change):
+        reward = 500 * excess_return  # Scale rewards
+
+        # Penalty for large drawdowns
+        if excess_return < -0.02:
+            reward -= 2 * abs(excess_return)  
+        # Transaction cost penalty for frequent trading
+        reward -= 0.0005 * abs(position_change)
+
+        return np.clip(reward, -10, 10)  # Prevent extreme values
+
+    def step(self, action, simulation=False):
+        # Must set new portfolio with regards to action
+        # Must set new reward
+        if self.current_tick == len(self.big_pt) - 2:
+            # The last action ended the episode. Ignore the current action and start
+            # a new episode.
+            self.episode_ended = True
+
+        # we are in state 0, best action between state 0 and state 1 has been predicted
+        # so we must get portfolio value and weights after state 0 evolution
+        # but before action has been taken into account
+        ktc = self.big_pt[self.current_tick,0,:,self.n-1]
+        pt_prime = self.pt * np.dot(self.wt,self.phi(ktc))
+        wt_prime = (self.wt*self.phi(ktc)) / (np.dot(self.wt,self.phi(ktc)))
+
+        action1 = np.atleast_1d(action)  # Converts scalars to 1D arrays
+        big_s_minus = np.where(action1==0)[0]
+        big_s_plus = np.where(action1==2)[0]
+
+
+        ct = (self.delta*(self.c_minus*len(big_s_minus) + self.c_plus*len(big_s_plus)))/pt_prime
+        if not simulation:
+            self.pt = pt_prime*(1 - ct)
+        else:
+            pt = pt_prime*(1 - ct)
+
+        wt_prime_chapeau_1tillend = self.get_wt_prime_chapeau(wt_prime[1:],big_s_minus,big_s_plus,pt_prime)
+        wt_prime_chapeau_0 = wt_prime[0] + self.delta*((1-self.c_minus)*len(big_s_minus)-(1+self.c_plus)*len(big_s_plus))/pt_prime
+        wt_prime_chapeau = np.concatenate((np.array([wt_prime_chapeau_0]), wt_prime_chapeau_1tillend))
+
+        # now we evolve to state one, to get reward of this action
+        if not simulation:
+            self.wt = wt_prime_chapeau / (np.dot(wt_prime_chapeau, np.ones(len(wt_prime_chapeau))))
+            self.current_tick += 1
+            k_t_plus_one_c = self.big_pt[self.current_tick,0,:,self.n-1]
+        else:
+            wt = wt_prime_chapeau / (np.dot(wt_prime_chapeau, np.ones(len(wt_prime_chapeau))))
+            current_tick = self.current_tick + 1
+            k_t_plus_one_c = self.big_pt[current_tick,0,:,self.n-1]
+
+        big_p_s_t_plus_one = pt_prime*np.dot(wt_prime, self.phi(k_t_plus_one_c))
+        p_t_plus_one_static = pt_prime * np.dot(wt_prime, self.phi(k_t_plus_one_c))
+        if not simulation:
+            p_t_plus_one_prime = self.pt * np.dot(self.wt,self.phi(k_t_plus_one_c))
+            excess_return = (p_t_plus_one_prime - p_t_plus_one_static) / (p_t_plus_one_static + 1e-8)
+            wt_plus_one_prime = (self.wt*self.phi(k_t_plus_one_c)) / (np.dot(self.wt,self.phi(k_t_plus_one_c)))
+        else:
+            p_t_plus_one_prime = pt * np.dot(wt,self.phi(k_t_plus_one_c))
+            excess_return = (p_t_plus_one_prime - p_t_plus_one_static) / (p_t_plus_one_static + 1e-8)
+            wt_plus_one_prime = (wt*self.phi(k_t_plus_one_c)) / (np.dot(wt,self.phi(k_t_plus_one_c)))
+        reward = self.compute_reward(excess_return, action, np.sum(np.abs(wt_prime - wt_prime_chapeau)))
+        if not simulation:
+            return {'big_xt':np.array(self.small_pt[self.current_tick]), 'wt_prime':wt_plus_one_prime}, reward, self.episode_ended
+        else:
+            return {'big_xt':np.array(self.small_pt[current_tick]), 'wt_prime':wt_plus_one_prime}, reward, self.episode_ended, p_t_plus_one_prime, wt_plus_one_prime
+mm_scaler = MinMaxScaler()
+
+datasets = ["SPY", "IWD", "IWC"]
+train_dates = ["2010-01-01", "2018-12-30"]
+n = 20
+env = PortfolioEnv(train_dates, datasets, n)
+datas_ = env.big_pt
+datas = datas_.swapaxes(2,3).swapaxes(1,3)
+final_datas = []
+for d in datas:
+    final_datas.append(d[0])
+    final_datas.append(d[1])
+    final_datas.append(d[2])
+final_datas = np.array(final_datas)
+datas_scaled = np.array([mm_scaler.fit_transform(d) for d in final_datas])
+
+split_idx = int(0.7 * len(datas_scaled))
+
+# Train and validation sets
+X_train = datas_scaled[:split_idx]
+X_valid = datas_scaled[split_idx:]
+test_dates = ["2019-01-01", "2019-12-30"]
+test_env = PortfolioEnv(test_dates, datasets, n)
+
+test_datas_ = test_env.big_pt
+test_datas = test_datas_.swapaxes(2,3).swapaxes(1,3)
+final_test_datas = []
+for d in test_datas:
+    final_test_datas.append(d[0])
+    final_test_datas.append(d[1])
+    final_test_datas.append(d[2])
+final_test_datas = np.array(final_test_datas)
+
+datas_scaled_test = np.array([mm_scaler.transform(d) for d in final_test_datas])
+X_test = datas_scaled_test  # Now you have test data
+# Define input layer
+input_layer = tf.keras.Input(shape=[20, 5])
+
+# Encoder
+recurrent_encoder = tf.keras.models.Sequential([
+    tf.keras.layers.LSTM(units=128, return_sequences=True),
+    tf.keras.layers.LSTM(units=20)
+])
+
+# Decoder
+recurrent_decoder = tf.keras.models.Sequential([
+    tf.keras.layers.RepeatVector(20),
+    tf.keras.layers.LSTM(units=20, return_sequences=True),
+    tf.keras.layers.LSTM(units=128, return_sequences=True),
+    tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(5, activation="sigmoid"))
+])
+
+# Connect the layers properly
+encoded = recurrent_encoder(input_layer)
+decoded = recurrent_decoder(encoded)
+
+# Define the full model
+recurrent_ae = tf.keras.models.Model(inputs=input_layer, outputs=decoded)
+
+# Compile the model
+recurrent_ae.compile(optimizer='adam', loss='binary_crossentropy')
+
+# Display model summaries
+recurrent_encoder.summary()
+recurrent_decoder.summary()
+recurrent_ae.summary()
+
+# Train the model
+with tf.device('/GPU:0'):
+    history = recurrent_ae.fit(X_train, X_train, epochs=50, validation_data=(X_valid, X_valid))
+
+import numpy as np
+def create_envs(dates, datasets, n):
+    envs = [PortfolioEnv(d, datasets, n) for d in dates]
+    return np.array(envs)
+
+datasets = ["SPY", "IWD", "IWC"]
+train_dates = [
+    ["2010-01-01", "2010-12-30"],
+    ["2011-01-01", "2011-12-30"],
+    ["2012-01-01", "2012-12-30"],
+    ["2013-01-01", "2013-12-30"],
+    ["2014-01-01", "2014-12-30"],
+    ["2015-01-01", "2015-12-30"],
+    ["2016-01-01", "2016-12-30"],
+    ["2017-01-01", "2017-12-30"],
+    ["2018-01-01", "2018-12-30"],
+]
+
+# 🚀 Faster Environment Creation
+train_envs = create_envs(train_dates, datasets, n)
+test_dates = [
+    ["2019-01-01", "2019-12-30"],
+]
+test_envs = create_envs(test_dates, datasets, n)
+train_envs = [PortfolioEnv(d, datasets, n) for d in train_dates]
+test_envs = [PortfolioEnv(d, datasets, n) for d in test_dates]
+
+train_envs = np.array(train_envs)
+test_envs = np.array(test_envs)
+# Set seeds for reproducibility
+tf.keras.backend.clear_session()
+tf.random.set_seed(42)
+np.random.seed(42)
+
+import tensorflow as tf
+import numpy as np
+import os
+import pickle as pkl
+import threading
+from collections import deque
+from tqdm import tqdm
+import random
+import pandas as pd
+
+#Tracking Metrics
+# Tracking Metrics
+epoch_losses = []  # Stores loss per batch for averaging
+train_rewards = []  # Stores episode rewards for training performance
+test_rewards = []  # Stores episode rewards for testing performance
+steps_per_episode = []  # Track steps taken in each episode
+target_model_update_count = 0  # Count number of updates to TARGET_MODEL
+selected_actions = []  # Track selected actions to detect bias
+Q_value_distribution = []  # Track Q-values per episode
+losses = []
+wt_primes = []
+kctplusones = []
+
+
+# Training parameters
+BETA = 0.3
+EPOCHS = 500 # Increased to 500 epochs
+BATCH_SIZE = 32
+DISCOUNT_RATE = 0.9
+EPSILON = 1
+STEPS = 0
+EPISODE_COUNTER = 1
+REPLAY_MEMORY = deque(maxlen=2000)
+
+# Generate truncated dataset indices
+r = np.random.rand(EPOCHS)
+N = len(train_envs)
+gen_trunc = (N - 1 - np.floor(np.log(1 - r * (1 - (1 - BETA) ** N)) / np.log(1 - BETA))).astype(int)
+
+# Define model
+wt_prime_input = tf.keras.layers.Input(shape=[4])
+inputs = [wt_prime_input]
+encoders = []
+
+for layer in recurrent_encoder.layers:
+    layer.trainable = False
+for t in datasets:
+    inpt = tf.keras.layers.Input(shape=[20, 5])
+    inputs.append(inpt)
+    encoders.append(recurrent_encoder(inpt))
+
+encoded_features = tf.keras.layers.Concatenate(axis=1)(encoders)
+combined_features = tf.keras.layers.Concatenate(axis=1)([encoded_features, wt_prime_input])
+
+hidden1 = tf.keras.layers.Dense(64, activation="relu")(combined_features)
+hidden2 = tf.keras.layers.Dense(32, activation="relu")(hidden1)
+output = tf.keras.layers.Dense(train_envs[0].action_shape)(hidden2)
+
+model = tf.keras.models.Model(inputs=inputs, outputs=output)
+model.summary()
+
+# Target network
+TARGET_MODEL = tf.keras.models.clone_model(model)
+TARGET_MODEL.set_weights(model.get_weights())
+
+# Optimizer & Loss with Learning Rate Scheduler
+LR_SCHEDULE = tf.keras.optimizers.schedules.ExponentialDecay(5e-4, decay_steps=5000, decay_rate=0.985, staircase=False)
+OPTIMIZER = tf.keras.optimizers.Adam(learning_rate=LR_SCHEDULE, beta_1 = 0.9, beta_2 = 0.999, epsilon = 1e-7, clipnorm=5)
+LOSS_FN = tf.keras.losses.Huber(delta=1)
+
+# Reward tracking
+train_CR = [[] for _ in train_envs]
+previous_CR, test_CR, test_previous_CR = 0, [], 0
+
+@tf.function(reduce_retracing=True)
+def train_step(preprocessed_states, wts_prime, mask, target_Q_values):
+    # Convert to tensors (ensure float32 for consistency)
+    preprocessed_states = tf.convert_to_tensor(preprocessed_states, dtype=tf.float32)
+    wts_prime = tf.convert_to_tensor(wts_prime, dtype=tf.float32)
+    mask = tf.convert_to_tensor(mask, dtype=tf.float32)
+    target_Q_values = tf.convert_to_tensor(target_Q_values, dtype=tf.float32)
+
+    # Unstack input features to avoid manual indexing
+    preprocessed_states_split = tf.unstack(preprocessed_states, axis=1)
+
+    with tf.GradientTape() as tape:
+        # Forward pass
+        all_Q_values = model((wts_prime, *preprocessed_states_split), training=True)
+
+        # Get Q-values for taken actions
+        Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
+
+        # Compute loss
+        loss = tf.reduce_mean(LOSS_FN(target_Q_values, Q_values))
+
+    # Compute gradients and update model
+    grads = tape.gradient(loss, model.trainable_variables)
+    OPTIMIZER.apply_gradients(zip(grads, model.trainable_variables))
+
+    return loss
+mean_training_reward = []
+var_training_reward = []
+total_action_reward = 0
+epoch_loss = []
+# Training loop
+for ind_env in gen_trunc:
+    env = train_envs[ind_env]
+    state = env.reset()
+    state['pt'] = env.pt
+    pbar = tqdm(total=235, desc="Training Progress", position=0, leave=True)
+    pbar.set_description(
+    f"Ep {EPISODE_COUNTER}/{len(gen_trunc)} | "
+    f"Loss: {np.round(np.mean(epoch_loss), 6) if epoch_loss else 0} | "
+    f"Train R: {np.round(np.mean(mean_training_reward), 8) if mean_training_reward else 0} | "
+    f"Train R Var{np.round(np.var(var_training_reward), 8) if var_training_reward else 0} | "
+    f"Q: {np.round(np.mean(Q_value_distribution), 4) if Q_value_distribution else 0} | "
+    f"ε: {np.round(EPSILON, 6)} | "
+    f"Training CR : {previous_CR} | "
+    f"Testing CR : {test_previous_CR} | "
+    f"Total Reward : {total_action_reward}")
+    epoch_loss = []
+    total_action_reward = 0
+    Q_value_distribution = []
+    step_logs = []  
+    LOG_FREQUENCY = 100 
+    while True:
+        possible_actions = env.F(state['pt'], state['wt_prime'])
+
+        # Action Selection (ε-greedy)
+        if np.random.rand() < EPSILON:
+            action = np.random.choice(possible_actions) if possible_actions.size > 0 else np.random.randint(env.actions.shape[0])
+        else:
+            state_inputs = [state['wt_prime'][np.newaxis]] + [state['big_xt'][i][np.newaxis] for i in range(3)]
+            Q_values = model.predict(state_inputs, verbose=0)
+            action = env.action_mapping(env.actions[np.argmax(Q_values[0])], Q_values[0], state['pt'], state['wt_prime'])
+            Q_value_distribution.append(Q_values.flatten())
+        next_state, reward, episode_ended = env.step(action)
+        next_state['pt'] = env.pt
+        
+        REPLAY_MEMORY.append((state, action, reward, next_state, episode_ended))
+        total_action_reward += reward
+        step_logs.append({
+        "Step": STEPS,
+        "Action": action,
+        "Max_Q": np.max(Q_values) if 'Q_values' in locals() else 0,
+        "Reward": reward,
+        "Portfolio_Value": env.pt,
+        "Position_Change": np.sum(np.abs(state['wt_prime'] - next_state['wt_prime']))
+        })
+        # Training step
+        if STEPS >= 100 and len(REPLAY_MEMORY) >= BATCH_SIZE:
+            batch_indices = np.random.choice(len(REPLAY_MEMORY), BATCH_SIZE)
+            batch = [REPLAY_MEMORY[i] for i in batch_indices] 
+            pre_states, actions, rewards, next_states, dones = zip(*batch)
+            preprocessed_states = np.array([s['big_xt'] for s in pre_states])
+            next_wt_primes = np.array([s['wt_prime'] for s in next_states])
+            next_preprocessed_states = np.array([s['big_xt'] for s in next_states])
+            next_state_inputs = [next_wt_primes] + [next_preprocessed_states[:, i] for i in range(3)]
+            next_Q_values = TARGET_MODEL.predict(next_state_inputs, verbose = 0)
+            max_next_Q_values = np.max(next_Q_values, axis=1)
+            target_Q_values = np.array(rewards) + (1 - np.array(dones)) * DISCOUNT_RATE * max_next_Q_values
+            target_Q_values = target_Q_values.reshape(-1, 1)
+            actions = np.array([env.find_action_index(a) if isinstance(a, np.ndarray) else a for a in actions], dtype=np.int32)
+            mask = tf.one_hot(actions, env.action_shape, dtype = tf.float32)
+            loss_value = train_step(
+                                    tf.convert_to_tensor(preprocessed_states, dtype = tf.float32),
+                                    tf.convert_to_tensor([s['wt_prime'] for s in pre_states], dtype= tf.float32),
+                                    tf.convert_to_tensor(mask, dtype= tf.float32),
+                                    tf.convert_to_tensor(target_Q_values, dtype= tf.float32)
+                                  )
+            if STEPS % LOG_FREQUENCY == 0:
+                avg_Q = np.mean([log["Max_Q"] for log in step_logs[-LOG_FREQUENCY:]])
+                avg_reward = np.mean([log["Reward"] for log in step_logs[-LOG_FREQUENCY:]])
+                avg_position_change = np.mean([log["Position_Change"] for log in step_logs[-LOG_FREQUENCY:]])
+        
+        print(f"Step {STEPS} | Avg Q: {avg_Q:.4f} | Avg Reward: {avg_reward:.6f} | Position Change: {avg_position_change:.4f}")
+        try:    
+            mean_training_reward.append(np.mean(rewards))
+            var_training_reward.append(np.var(rewards))
+            epoch_loss.append(loss_value.numpy())
+        except:
+            mean_training_reward.append(np.mean([0]))
+            var_training_reward.append(np.var([0]))
+            epoch_loss.append(0)
+        state = next_state
+        STEPS += 1
+        steps_per_episode.append(STEPS)
+        pbar.update(1)
+        if episode_ended:
+            break
+    if epoch_loss:  # Ensure there are losses recorded
+        avg_loss = np.mean(epoch_loss)
+        last_loss = epoch_loss[-1]
+        print(f"Epoch {EPISODE_COUNTER}: Avg Loss = {avg_loss:.6f}, Last Loss = {last_loss:.6f}")
+
+
+    pbar.close()
+    EPISODE_COUNTER += 1
+    previous_CR = round((env.pt - env.initial_pt) / env.initial_pt, 3)
+    train_CR[ind_env].append(previous_CR)
+    pbar.close()
+    if EPISODE_COUNTER % 10 == 0:
+          # Testing phase
+      for test_env in test_envs:
+          test_state = test_env.reset()
+          test_state['pt'] = test_env.pt
+          test_episode_ended = False
+
+
+          while not test_episode_ended:
+              test_Q_values = model.predict([test_state['wt_prime'][np.newaxis]] + [test_state['big_xt'][i][np.newaxis] for i in range(3)], verbose=0)
+              test_action = env.action_mapping(env.actions[np.argmax(test_Q_values[0])], test_Q_values[0], test_state['pt'], test_state['wt_prime'])
+              test_state, _, test_episode_ended = test_env.step(test_action)
+              test_state['pt'] = test_env.pt
+
+          test_previous_CR = round((test_env.pt - test_env.initial_pt) / test_env.initial_pt, 3)
+          test_CR.append(test_previous_CR)
+          wt_primes.append(test_state['wt_prime'])
+
+
+    tau = 0.01  # Small blending factor
+    for target_param, param in zip(TARGET_MODEL.trainable_variables, model.trainable_variables):
+        target_param.assign(tau * param + (1 - tau) * target_param)
+    if EPISODE_COUNTER % 10 == 0:  # Log every 10 episodes
+        q_mean = np.mean(Q_value_distribution)
+        q_std = np.std(Q_value_distribution)
+        print(f"Epoch {EPISODE_COUNTER} | Q_mean: {q_mean:.4f} | Q_std: {q_std:.4f}")
+    # Adjust epsilon decay for smooth transition
+    if EPISODE_COUNTER < 150:
+        EPSILON = max(0.1, EPSILON * 0.997)  # Slower decay at start
+    else:
+        EPSILON = max(0.01, EPSILON * 0.99)  # Faster decay later
+
+    # Save checkpoints every 50 episodes asynchronously
+    if EPISODE_COUNTER % 50 == 0:
+        pkl.dump(train_CR, open('train_CR.pkl', 'wb'))
+        pkl.dump(test_CR, open('test_CR.pkl', 'wb'))
+        df = pd.DataFrame(train_CR)
+        df.to_csv("train_CR.csv", index=False)
+        df = pd.DataFrame(test_CR)
+        df.to_csv("test_CR.csv", index=False)
+    train_rewards.append(total_action_reward)
+
+# Final Save
+pkl.dump(train_CR, open('train_CR.pkl', 'wb'))
+pkl.dump(test_CR, open('test_CR.pkl', 'wb'))

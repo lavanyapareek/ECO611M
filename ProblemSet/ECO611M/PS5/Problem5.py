@@ -19,7 +19,9 @@ def Finv(x, u):
     return x
 
 X = np.array([Finv(1, u) for u in U])
-
+x_vals = np.arange(0, 50, 0.001)
+pdf_vals = f(x_vals)
+plt.plot(x_vals, pdf_vals)
 plt.hist(X, bins = np.arange(0, 50, 0.1), density = True)
 plt.show()
     
