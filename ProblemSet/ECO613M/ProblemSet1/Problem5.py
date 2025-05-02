@@ -36,7 +36,6 @@ curr_iter = 0
 
 
 for curr_iter in range(max_iter):
-
     #E : 
     f1 = pi_chapeau * sps.norm.pdf(X, mu_chapeau[0], np.sqrt(sigma_chapeau[0]))
     f2 = (1 - pi_chapeau) * sps.norm.pdf(X, mu_chapeau[1], np.sqrt(sigma_chapeau[1]))

@@ -6,7 +6,7 @@ np.random.seed(42)
 def genrate_MA(q, N):
     sigma = 2
     mu = 5
-    eps = sigma * np.random.randn(N) + mu
+    eps = np.sqrt(sigma) * np.random.randn(N) + mu
     A = np.random.rand(q)
     X = np.zeros(N)
 
@@ -35,7 +35,6 @@ print(theo_mean, theo_var, np.mean(theo_cov))
 for _ in range(10):
     sample = np.random.choice(X, 1000)
     cov = []
-
     for j in range(1, 10 + 2):
         cov.append(np.cov(X[j:], X[:-j])[0, 1])
     print(np.mean(sample), np.var(sample), np.mean(np.array(cov)))

@@ -52,4 +52,4 @@ for i in range(k):
         dof += 1
         stat += (( Oi - Ei ) ** 2 )/ Ei
 
-print(1 - scipy.stats.chi2.cdf(stat, dof))
+print(stat, 1 - scipy.stats.chi2.cdf(stat, dof))

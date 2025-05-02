@@ -33,11 +33,9 @@ print(np.mean(y_pred != Y))
 
 x_min, x_max = X[:,0].min() - 1, X[:,0].max() + 1
 y_min, y_max = X[:,1].min() - 1, X[:,1].max() + 1
-xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200),
-                     np.linspace(y_min, y_max, 200))
+xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200), np.linspace(y_min, y_max, 200))
+
 grid = np.c_[xx.ravel(), yy.ravel()]
-
-
 grid_pred = K_NN(X, Y, k)
 Z_grid = K_NN(X, Y, k, grid).reshape(xx.shape)
 
